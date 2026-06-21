@@ -1,36 +1,30 @@
 import streamlit as st
-from toxicity_model import predict
+import requests
+import plotly.bar as bar
+import pandas as pd
 
-st.set_page_config(
-    page_title="Toxicity Detection Dashboard",
-    layout="wide"
-)
+API_URL = "http://localhost:8000/predict"
 
-st.title("Multi-Platform Toxicity Detection Pipeline")
+st.title("Toxicity & Cyberbullying Detection System")
 
-st.write(
-    """
-    Enter a comment below to analyze toxicity levels.
-    """
-)
-
-comment = st.text_area(
-    "Comment",
-    height=150
-)
+text = st.text_area("Enter a comment")
 
 if st.button("Analyze"):
 
-    result = predict(comment)
+    response = requests.post(
+        API_URL,
+        json={"text": text}
+    ).json()
 
-    st.subheader("Prediction")
+    scores = response["toxicity_scores"]
 
-    st.write(
-        f"Toxicity Score: {result['toxicity_score']:.2f}"
-    )
+    st.subheader("Results")
 
-    st.write(
-        f"Detected Labels: {result['labels']}"
-    )
+    df = pd.DataFrame({
+        "Label": list(scores.keys()),
+        "Score": list(scores.values())
+    })
 
-    st.json(result)
+    st.bar_chart(df.set_index("Label"))
+
+    st.json(response)

@@ -1,9 +1,12 @@
 streamlit
+fastapi
+uvicorn
 torch
 transformers
-datasets
+scikit-learn
 pandas
 numpy
-scikit-learn
+matplotlib
+plotly
 sentencepiece
 accelerate
