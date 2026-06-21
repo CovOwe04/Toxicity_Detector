@@ -1,33 +1,43 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
+
 from preprocess import TextPreprocessor
-from model import ensemble_predict
+from model import load_best_model
 
 app = FastAPI()
 
 preprocessor = TextPreprocessor()
 
-class Request(BaseModel):
+# Load best model once at startup
+model, model_type = load_best_model()
+
+
+class TextRequest(BaseModel):
     text: str
 
 
 @app.get("/")
-def health():
-    return {"status": "active"}
+def health_check():
+    return {
+        "status": "active",
+        "model_loaded": model_type
+    }
 
 
 @app.post("/predict")
-def predict(req: Request):
+def predict(req: TextRequest):
 
-    text = preprocessor.normalize(req.text)
+    cleaned_text = preprocessor.normalize(req.text)
 
+    # -------------------------------------------------
     # TODO:
-    # - tokenize
-    # - run GRU + Transformer
-    # - ensemble output
+    # - tokenize input
+    # - run inference using loaded model
+    # -------------------------------------------------
 
     return {
-        "text": text,
+        "input": cleaned_text,
+        "model_used": model_type,
         "toxicity_scores": {
             "toxic": 0.0,
             "severe_toxic": 0.0,

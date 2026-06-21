@@ -2,23 +2,43 @@ import torch
 import torch.nn as nn
 from transformers import AutoModelForSequenceClassification
 
-# ---------------- GRU MODEL ----------------
+# =====================================================
+# LABEL SPACE
+# =====================================================
+
+LABELS = [
+    "toxic",
+    "severe_toxic",
+    "obscene",
+    "threat",
+    "insult",
+    "identity_hate"
+]
+
+# =====================================================
+# GRU MODEL (STRUCTURE ONLY)
+# =====================================================
+
 class GRUModel(nn.Module):
 
-    def __init__(self, vocab_size=50000, emb=128, hidden=256, out=6):
+    def __init__(self):
         super().__init__()
 
-        self.embedding = nn.Embedding(vocab_size, emb)
-        self.gru = nn.GRU(emb, hidden, batch_first=True)
-        self.fc = nn.Linear(hidden, out)
+        # TODO:
+        # - embedding layer
+        # - GRU layer
+        # - classification head
+
+        self.dummy = nn.Linear(10, 6)
 
     def forward(self, x):
-        x = self.embedding(x)
-        _, h = self.gru(x)
-        return self.fc(h[-1])
+        return self.dummy(x)
 
 
-# ---------------- TRANSFORMER MODEL ----------------
+# =====================================================
+# TRANSFORMER MODEL LOADER
+# =====================================================
+
 def load_transformer():
 
     model = AutoModelForSequenceClassification.from_pretrained(
@@ -30,7 +50,30 @@ def load_transformer():
     return model
 
 
-# ---------------- ENSEMBLE ----------------
-def ensemble_predict(gru_logits, transformer_logits):
+# =====================================================
+# BEST MODEL LOADER (USED BY API)
+# =====================================================
 
-    return (gru_logits + transformer_logits) / 2
+def load_best_model():
+
+    path = "models/best_model.pt"
+
+    try:
+        checkpoint = torch.load(path, map_location="cpu")
+
+        model_type = checkpoint["model_type"]
+
+        if model_type == "gru":
+            model = GRUModel()
+        else:
+            model = load_transformer()
+
+        model.load_state_dict(checkpoint["state_dict"])
+        model.eval()
+
+        return model, model_type
+
+    except:
+
+        # fallback (no trained model yet)
+        return GRUModel(), "gru_fallback"

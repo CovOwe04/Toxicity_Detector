@@ -1,5 +1,5 @@
-from sklearn.metrics import roc_auc_score
 import numpy as np
+from sklearn.metrics import roc_auc_score
 
 LABELS = [
     "toxic",
@@ -10,6 +10,7 @@ LABELS = [
     "identity_hate"
 ]
 
+
 def compute_roc_auc(y_true, y_pred):
 
     scores = {}
@@ -17,10 +18,7 @@ def compute_roc_auc(y_true, y_pred):
     for i, label in enumerate(LABELS):
 
         try:
-            scores[label] = roc_auc_score(
-                y_true[:, i],
-                y_pred[:, i]
-            )
+            scores[label] = roc_auc_score(y_true[:, i], y_pred[:, i])
         except:
             scores[label] = 0.0
 
