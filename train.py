@@ -1,5 +1,7 @@
 import pandas as pd
 import torch
+import json
+from pathlib import Path
 
 from preprocess import TextPreprocessor
 from metrics import compute_roc_auc
@@ -31,6 +33,10 @@ def load_dataset(path=DATA_PATH):
     Load raw Jigsaw dataset
     """
     df = pd.read_csv(path)
+
+    # Standardize Jigsaw format
+    df = df[["comment_text"] + LABELS]
+
     return df
 
 
@@ -45,12 +51,13 @@ def preprocess_dataset(df):
 
     processor = TextPreprocessor()
 
-    # TODO:
-    # - normalize text
-    # - handle adversarial text patterns
-    # - prepare training format
+    # Create a clean working column
+    df["clean_text"] = df["comment_text"].astype(str).apply(
+        lambda x: processor.normalize(x)
+    )
 
-    df["text"] = df["comment_text"].apply(processor.normalize)
+    # Optional: drop empty rows after cleaning
+    df = df[df["clean_text"].str.len() > 0]
 
     return df
 
@@ -64,14 +71,95 @@ def build_features(df):
     Convert text into model-ready format
     """
 
-    # TODO:
-    # - GRU tokenization pipeline
-    # - Transformer tokenizer pipeline
-    # - padding / truncation
-    # - tensor conversion
+    from collections import Counter
+    import numpy as np
+    from sklearn.model_selection import train_test_split
+    from transformers import AutoTokenizer
 
-    train_data = None
-    val_data = None
+    MAX_VOCAB_SIZE = 50000
+    MAX_SEQ_LEN = 150
+
+    # =================================================
+    # LABELS
+    # =================================================
+
+    y = df[LABELS].values
+
+    # =================================================
+    # GRU TOKENIZATION (CUSTOM VOCAB)
+    # =================================================
+
+    print("Building GRU vocabulary...")
+
+    counter = Counter()
+    for text in df["clean_text"]:
+        counter.update(text.split())
+
+    most_common = counter.most_common(MAX_VOCAB_SIZE - 2)
+
+    vocab = {"<PAD>": 0, "<UNK>": 1}
+
+    for i, (word, _) in enumerate(most_common, start=2):
+        vocab[word] = i
+
+    def encode_gru(text):
+        tokens = [vocab.get(w, 1) for w in text.split()]
+        tokens = tokens[:MAX_SEQ_LEN]
+        tokens += [0] * (MAX_SEQ_LEN - len(tokens))
+        return tokens
+
+    print("Tokenizing GRU inputs...")
+
+    X_gru = np.array([
+        encode_gru(text) for text in df["clean_text"]
+    ])
+
+    # =================================================
+    # TRANSFORMER TOKENIZATION (DEBERTA)
+    # =================================================
+
+    print("Loading transformer tokenizer...")
+
+    tokenizer = AutoTokenizer.from_pretrained(
+        "microsoft/deberta-v3-base"
+    )
+
+    transformer_inputs = tokenizer(
+        df["clean_text"].tolist(),
+        padding=True,
+        truncation=True,
+        max_length=MAX_SEQ_LEN,
+        return_tensors="pt"
+    )
+
+    # =================================================
+    # TRAIN / VAL SPLIT (GRU ONLY SPLIT HERE)
+    # =================================================
+
+    X_train, X_val, y_train, y_val = train_test_split(
+        X_gru,
+        y,
+        test_size=0.2,
+        random_state=42
+    )
+
+    train_data = {
+        "gru": (X_train, y_train),
+        "transformer": transformer_inputs
+    }
+
+    val_data = {
+        "gru": (X_val, y_val)
+    }
+
+    def save_vocab(vocab, path="models/vocab.json"):
+        vocab_path = Path(path)
+        vocab_path.parent.mkdir(parents=True, exist_ok=True)
+
+        with vocab_path.open("w") as f:
+            json.dump(vocab, f)
+
+    save_vocab(vocab)
 
     return train_data, val_data
 
@@ -172,6 +260,9 @@ def run_pipeline():
 
     print("Preprocessing dataset...")
     df = preprocess_dataset(df)
+
+    print("Sample cleaned text:")
+    print(df["clean_text"].head())
 
     print("Building features...")
     train_data, val_data = build_features(df)

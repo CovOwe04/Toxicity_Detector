@@ -1,6 +1,8 @@
 streamlit
 fastapi
-uvicorn
+pydantic
+uvicorn[standard]
+requests
 torch
 transformers
 scikit-learn
@@ -9,4 +11,5 @@ numpy
 matplotlib
 plotly
 sentencepiece
+protobuf
 accelerate
