@@ -1,3 +1,5 @@
+import os
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
 import torch
@@ -86,13 +88,21 @@ class GRUModel(nn.Module):
 # TRANSFORMER MODEL LOADER
 # =====================================================
 
-def load_transformer(model_name=DEFAULT_TRANSFORMER_MODEL):
+def load_transformer(model_name=DEFAULT_TRANSFORMER_MODEL, quiet=True):
 
-    model = AutoModelForSequenceClassification.from_pretrained(
-        model_name,
-        num_labels=len(LABELS),
-        problem_type="multi_label_classification"
-    )
+    def build_model():
+        return AutoModelForSequenceClassification.from_pretrained(
+            model_name,
+            num_labels=len(LABELS),
+            problem_type="multi_label_classification"
+        )
+
+    if quiet:
+        with open(os.devnull, "w") as devnull:
+            with redirect_stdout(devnull), redirect_stderr(devnull):
+                model = build_model()
+    else:
+        model = build_model()
 
     return model.float()
 
@@ -126,4 +136,5 @@ def load_best_model(path="models/best_model.pt"):
 
     except Exception:
         return GRUModel(), "gru_fallback"
+
 

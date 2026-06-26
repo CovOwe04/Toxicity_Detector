@@ -26,14 +26,16 @@ VOCAB_PATH = MODEL_DIR / "vocab.json"
 BEST_MODEL_PATH = MODEL_DIR / "best_model.pt"
 
 MAX_VOCAB_SIZE = 50000
-MAX_SEQ_LEN = 150
+MAX_SEQ_LEN = 64
 BATCH_SIZE = 64
-EPOCHS = 3
+EPOCHS = 1
 LEARNING_RATE = 1e-3
+DEFAULT_MAX_ROWS = 5000
 
 TRANSFORMER_BATCH_SIZE = 4
 TRANSFORMER_EPOCHS = 1
-TRANSFORMER_LEARNING_RATE = 5e-6
+TRANSFORMER_LEARNING_RATE = 1e-6
+TRANSFORMER_MAX_BATCHES = 50
 
 LABELS = [
     "toxic",
@@ -137,6 +139,7 @@ def build_features(df):
         "gru": {
             "inputs": torch.tensor(X_gru[train_idx], dtype=torch.long),
             "labels": torch.tensor(y[train_idx], dtype=torch.float32),
+            "texts": [texts[i] for i in train_idx],
             "vocab_size": len(vocab),
         },
         "transformer": {
@@ -149,6 +152,7 @@ def build_features(df):
         "gru": {
             "inputs": torch.tensor(X_gru[val_idx], dtype=torch.long),
             "labels": torch.tensor(y[val_idx], dtype=torch.float32),
+            "texts": [texts[i] for i in val_idx],
             "vocab_size": len(vocab),
         },
         "transformer": {
@@ -191,6 +195,15 @@ class TransformerTextDataset(Dataset):
 
         return item
 
+def print_sample_probabilities(model_name, sample_text, probabilities):
+    print(f"{model_name} sample text:")
+    print(sample_text)
+    print(f"{model_name} sample probabilities:")
+    print("  Label           Probability")
+    print("  --------------  -----------")
+
+    for label, score in zip(LABELS, probabilities):
+        print(f"  {label:<14}  {score * 100:>10.2f}%")
 
 # =====================================================
 # MODEL TRAINING LAYER
@@ -243,8 +256,33 @@ def train_gru(
         avg_loss = total_loss / max(seen_examples, 1)
         print(f"GRU epoch {epoch + 1}/{epochs} - loss: {avg_loss:.4f}")
 
+    print_gru_sample_output(model, val_data, device)
+
     return model
 
+def print_gru_sample_output(model, val_data, device):
+    """
+    Print one validation probability vector for the exact shown sample text.
+    """
+
+    gru_val = val_data["gru"]
+
+    if len(gru_val["inputs"]) == 0:
+        return
+
+    model.eval()
+    sample_input = gru_val["inputs"][0].unsqueeze(0).to(device)
+    sample_text = gru_val.get("texts", [""])[0]
+
+    with torch.no_grad():
+        logits = model(sample_input)
+
+        if not torch.isfinite(logits).all():
+            raise RuntimeError("GRU produced non-finite sample logits.")
+
+        probabilities = torch.sigmoid(logits).squeeze(0).cpu().tolist()
+
+    print_sample_probabilities("GRU", sample_text, probabilities)
 
 def train_transformer(
     train_data,
@@ -346,13 +384,7 @@ def print_transformer_sample_output(model, tokenizer, transformer_val, device, m
 
         probabilities = torch.sigmoid(logits).squeeze(0).cpu().tolist()
 
-    sample_scores = {
-        label: round(score, 4)
-        for label, score in zip(LABELS, probabilities)
-    }
-
-    print("Transformer sample text:", text)
-    print("Transformer sample probabilities:", sample_scores)
+    print_sample_probabilities("Transformer", text, probabilities)
 
 
 # =====================================================
@@ -481,7 +513,7 @@ def run_pipeline(args=None):
             epochs=args.gru_epochs,
             batch_size=args.gru_batch_size,
             learning_rate=args.gru_lr,
-            max_batches=args.max_batches,
+            max_batches=args.gru_max_batches,
         )
         trained_models["gru"] = gru_model
         save_workflow_model(gru_model, "gru")
@@ -496,7 +528,7 @@ def run_pipeline(args=None):
             batch_size=args.transformer_batch_size,
             learning_rate=args.transformer_lr,
             max_seq_len=args.max_seq_len,
-            max_batches=args.max_batches,
+            max_batches=args.transformer_max_batches,
         )
         trained_models["transformer"] = transformer_model
         save_workflow_model(transformer_model, "transformer")
@@ -515,20 +547,28 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Train toxicity detection models.")
     parser.add_argument("--data-path", default=DATA_PATH)
     parser.add_argument("--model", choices=["gru", "transformer", "both"], default="both")
-    parser.add_argument("--max-rows", type=int, default=None)
+    parser.add_argument("--max-rows", type=int, default=DEFAULT_MAX_ROWS)
     parser.add_argument("--max-batches", type=int, default=None)
     parser.add_argument("--max-seq-len", type=int, default=MAX_SEQ_LEN)
 
     parser.add_argument("--gru-epochs", type=int, default=EPOCHS)
     parser.add_argument("--gru-batch-size", type=int, default=BATCH_SIZE)
     parser.add_argument("--gru-lr", type=float, default=LEARNING_RATE)
+    parser.add_argument("--gru-max-batches", type=int, default=None)
 
     parser.add_argument("--transformer-model", default=DEFAULT_TRANSFORMER_MODEL)
     parser.add_argument("--transformer-epochs", type=int, default=TRANSFORMER_EPOCHS)
     parser.add_argument("--transformer-batch-size", type=int, default=TRANSFORMER_BATCH_SIZE)
     parser.add_argument("--transformer-lr", type=float, default=TRANSFORMER_LEARNING_RATE)
+    parser.add_argument("--transformer-max-batches", type=int, default=TRANSFORMER_MAX_BATCHES)
 
-    return parser.parse_args()
+    args = parser.parse_args()
+
+    if args.max_batches is not None:
+        args.gru_max_batches = args.max_batches
+        args.transformer_max_batches = args.max_batches
+
+    return args
 
 
 # =====================================================
@@ -537,5 +577,9 @@ def parse_args():
 
 if __name__ == "__main__":
     run_pipeline()
+
+
+
+
 
 
