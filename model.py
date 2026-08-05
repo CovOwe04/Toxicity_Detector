@@ -6,6 +6,9 @@ import torch
 import torch.nn as nn
 from transformers import AutoModelForSequenceClassification
 
+# Resolve project root dynamically so relative paths work in Cloud environments
+BASE_DIR = Path(__file__).resolve().parent
+
 # =====================================================
 # LABEL SPACE
 # =====================================================
@@ -108,16 +111,20 @@ def load_transformer(model_name=DEFAULT_TRANSFORMER_MODEL, quiet=True):
 
 
 # =====================================================
-# BEST MODEL LOADER (USED BY API)
+# BEST MODEL LOADER
 # =====================================================
 
 def load_best_model(path="models/best_model.pt"):
+    checkpoint_path = BASE_DIR / path if not Path(path).is_absolute() else Path(path)
 
-    checkpoint_path = Path(path)
+    if not checkpoint_path.exists():
+        print(f"WARNING: Model file not found at {checkpoint_path}. Falling back to untrained GRU.")
+        return GRUModel(), "gru_fallback"
 
     try:
-        checkpoint = torch.load(checkpoint_path, map_location="cpu")
-        model_type = checkpoint["model_type"]
+        # Streamlit cloud supports weights_only=False for custom dictionary checkpoints
+        checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+        model_type = checkpoint.get("model_type", "gru")
 
         if model_type == "gru":
             model_config = checkpoint.get("model_config", {})
@@ -134,7 +141,6 @@ def load_best_model(path="models/best_model.pt"):
 
         return model, model_type
 
-    except Exception:
+    except Exception as e:
+        print(f"ERROR loading checkpoint from {checkpoint_path}: {e}")
         return GRUModel(), "gru_fallback"
-
-
