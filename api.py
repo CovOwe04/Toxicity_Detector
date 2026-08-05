@@ -3,12 +3,13 @@ from pydantic import BaseModel
 
 import json
 import numpy as np
+import torch
 from pathlib import Path
 
 from transformers import AutoTokenizer
 
 from preprocess import TextPreprocessor
-from model import load_best_model
+from model import load_best_model, LABELS
 
 
 # =====================================================
@@ -90,6 +91,30 @@ def tokenize_transformer(text: str):
     )
 
 
+def predict_gru(tokens):
+    """
+    Run GRU inference and return toxicity probabilities.
+    """
+
+    device = next(model.parameters()).device
+
+    input_tensor = torch.tensor(
+        tokens,
+        dtype=torch.long
+    ).unsqueeze(0).to(device)
+
+    model.eval()
+
+    with torch.no_grad():
+        logits = model(input_tensor)
+        probabilities = torch.sigmoid(logits)[0].cpu().numpy()
+
+    return {
+        label: float(score)
+        for label, score in zip(LABELS, probabilities)
+    }
+
+
 # =====================================================
 # ROUTES
 # =====================================================
@@ -126,10 +151,18 @@ def predict(req: TextRequest):
         transformer_input_ids_sample = transformer_tokens["input_ids"][0][:20].tolist()
         attention_mask_sample = transformer_tokens["attention_mask"][0][:20].tolist()
 
-    # -------------------------------------------------
-    # NOTE:
-    # MODEL INFERENCE STILL NOT IMPLEMENTED (EXPECTED)
-    # -------------------------------------------------
+    # =================================================
+    # MODEL INFERENCE
+    # =================================================
+
+    if model_type == "gru":
+        toxicity_scores = predict_gru(gru_tokens)
+
+    else:
+        raise RuntimeError(
+            f"Unsupported deployed model type: {model_type}"
+        )
+
 
     return {
         "input": cleaned_text,
@@ -141,12 +174,5 @@ def predict(req: TextRequest):
         "transformer_input_ids_sample": transformer_input_ids_sample,
         "attention_mask_sample": attention_mask_sample,
 
-        "toxicity_scores": {
-            "toxic": 0.0,
-            "severe_toxic": 0.0,
-            "obscene": 0.0,
-            "threat": 0.0,
-            "insult": 0.0,
-            "identity_hate": 0.0
-        }
+        "toxicity_scores": toxicity_scores
     }

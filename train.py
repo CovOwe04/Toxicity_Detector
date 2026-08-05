@@ -424,6 +424,66 @@ def evaluate(model, val_data, model_name="model", batch_size=BATCH_SIZE):
     return scores
 
 
+def evaluate_transformer(
+    model,
+    val_data,
+    model_name="Transformer",
+    batch_size=TRANSFORMER_BATCH_SIZE,
+    max_seq_len=MAX_SEQ_LEN,
+):
+    """
+    Evaluate the Transformer model using ROC-AUC.
+    """
+
+    device = next(model.parameters()).device
+
+    tokenizer = AutoTokenizer.from_pretrained(
+        getattr(model, "transformer_model_name", DEFAULT_TRANSFORMER_MODEL)
+    )
+
+    dataset = TransformerTextDataset(
+        val_data["transformer"]["texts"],
+        val_data["transformer"]["labels"],
+        tokenizer,
+        max_seq_len=max_seq_len,
+    )
+
+    loader = DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=False,
+    )
+
+    model.eval()
+
+    predictions = []
+    targets = []
+
+    with torch.no_grad():
+
+        for batch in loader:
+
+            labels = batch.pop("labels")
+            batch = {k: v.to(device) for k, v in batch.items()}
+
+            logits = model(**batch).logits
+
+            probabilities = torch.sigmoid(logits).cpu().numpy()
+
+            predictions.append(probabilities)
+            targets.append(labels.numpy())
+
+    y_pred = np.vstack(predictions)
+    y_true = np.vstack(targets)
+
+    scores = compute_roc_auc(y_true, y_pred)
+
+    print(f"{model_name} evaluation results:")
+    print(scores)
+
+    return scores
+
+
 # =====================================================
 # MODEL SELECTION / EXPERIMENT TRACKING
 # =====================================================
@@ -433,7 +493,10 @@ def select_best_model(gru_scores, transformer_scores=None):
     Choose best performing model.
     """
 
-    if transformer_scores and transformer_scores["mean_auc"] > gru_scores["mean_auc"]:
+    if (
+        transformer_scores is not None
+        and transformer_scores["mean_auc"] > gru_scores["mean_auc"]
+    ):
         return "transformer"
 
     return "gru"
@@ -533,10 +596,51 @@ def run_pipeline(args=None):
         trained_models["transformer"] = transformer_model
         save_workflow_model(transformer_model, "transformer")
 
-    if "gru" in trained_models and args.model == "gru":
-        save_model(trained_models["gru"], "gru")
 
-    print("Training workflow complete.")
+    # =================================================
+    # MODEL EVALUATION
+    # =================================================
+
+    scores = {}
+
+    if "gru" in trained_models:
+        print("\nEvaluating GRU model...")
+        scores["gru"] = evaluate(trained_models["gru"], val_data, model_name="GRU")
+
+    if "transformer" in trained_models:
+        print("\nEvaluating Transformer model...")
+        scores["transformer"] = evaluate_transformer(trained_models["transformer"], val_data, model_name="Transformer")
+
+
+    # =================================================
+    # MODEL SELECTION
+    # =================================================
+
+    if "gru" in scores and "transformer" in scores:
+        best_model_name = select_best_model(scores["gru"], scores["transformer"])
+    elif "gru" in scores:
+        best_model_name = "gru"
+    else:
+        best_model_name = "transformer"
+
+    print("\n==============================")
+    print("MODEL COMPARISON")
+    print("==============================")
+
+    for name, result in scores.items():
+        print(name.upper())
+        print(result)
+        print()
+
+    print("BEST MODEL:", best_model_name)
+
+
+    # =================================================
+    # SAVE BEST MODEL
+    # =================================================
+
+    save_model(trained_models[best_model_name], best_model_name, BEST_MODEL_PATH)
+    print("\nTraining workflow complete.")
 
 
 # =====================================================
