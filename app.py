@@ -104,7 +104,8 @@ if st.button("Analyze"):
         try:
             cleaned_text = preprocessor.normalize(text)
 
-            if model_type == "gru":
+            # Updated condition to accept 'gru_fallback'
+            if model_type in ["gru", "gru_fallback"]:
                 gru_tokens = tokenize_gru(cleaned_text)
                 toxicity_scores = predict_gru(gru_tokens)
             elif model_type in ["transformer", "deberta"]:
