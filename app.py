@@ -11,6 +11,8 @@ from transformers import AutoTokenizer
 from preprocess import TextPreprocessor
 from model import load_best_model, LABELS
 
+# Resolve project root dynamically for Streamlit Cloud
+BASE_DIR = Path(__file__).resolve().parent
 MAX_SEQ_LEN = 150
 
 # Page setup
@@ -28,7 +30,7 @@ def load_app_resources():
 
 @st.cache_data
 def load_vocab(path="models/vocab.json"):
-    vocab_path = Path(path)
+    vocab_path = BASE_DIR / path if not Path(path).is_absolute() else Path(path)
     if not vocab_path.exists():
         return {"<PAD>": 0, "<UNK>": 1}
     with vocab_path.open("r") as f:
@@ -104,7 +106,6 @@ if st.button("Analyze"):
         try:
             cleaned_text = preprocessor.normalize(text)
 
-            # Updated condition to accept 'gru_fallback'
             if model_type in ["gru", "gru_fallback"]:
                 gru_tokens = tokenize_gru(cleaned_text)
                 toxicity_scores = predict_gru(gru_tokens)
