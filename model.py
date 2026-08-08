@@ -4,6 +4,7 @@ from pathlib import Path
 
 import torch
 import torch.nn as nn
+from torch.nn.utils.rnn import pack_padded_sequence
 from transformers import AutoModelForSequenceClassification
 
 # Resolve project root dynamically so relative paths work in Cloud environments
@@ -69,14 +70,22 @@ class GRUModel(nn.Module):
             bidirectional=bidirectional,
         )
         self.dropout = nn.Dropout(dropout)
+        self.padding_idx = padding_idx
 
         direction_multiplier = 2 if bidirectional else 1
         self.classifier = nn.Linear(hidden_dim * direction_multiplier, output_dim)
 
     def forward(self, x):
         x = x.long()
+        lengths = x.ne(self.padding_idx).sum(dim=1).clamp(min=1).cpu()
         embedded = self.embedding(x)
-        _, hidden = self.gru(embedded)
+        packed = pack_padded_sequence(
+            embedded,
+            lengths,
+            batch_first=True,
+            enforce_sorted=False,
+        )
+        _, hidden = self.gru(packed)
 
         if self.gru.bidirectional:
             hidden = torch.cat((hidden[-2], hidden[-1]), dim=1)
@@ -129,12 +138,14 @@ def load_best_model(path="models/best_model.pt"):
         if model_type == "gru":
             model_config = checkpoint.get("model_config", {})
             model = GRUModel(**model_config)
+            model.max_seq_len = checkpoint.get("max_seq_len", 64)
         else:
             transformer_name = checkpoint.get(
                 "transformer_model_name",
                 DEFAULT_TRANSFORMER_MODEL,
             )
             model = load_transformer(transformer_name)
+            model.max_seq_len = checkpoint.get("max_seq_len", 64)
 
         model.load_state_dict(checkpoint["state_dict"])
         model.eval()
@@ -144,3 +155,4 @@ def load_best_model(path="models/best_model.pt"):
     except Exception as e:
         print(f"ERROR loading checkpoint from {checkpoint_path}: {e}")
         return GRUModel(), "gru_fallback"
+

@@ -522,6 +522,7 @@ def save_model(model, model_name, path=BEST_MODEL_PATH):
         "model_type": model_name,
         "state_dict": model.cpu().state_dict(),
         "labels": LABELS,
+        "max_seq_len": MAX_SEQ_LEN,
     }
 
     if model_name == "gru" and hasattr(model, "config"):
@@ -681,6 +682,8 @@ def parse_args():
 
 if __name__ == "__main__":
     run_pipeline()
+
+
 
 
 

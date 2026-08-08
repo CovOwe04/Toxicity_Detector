@@ -13,7 +13,7 @@ from model import load_best_model, LABELS
 
 # Resolve project root dynamically for Streamlit Cloud
 BASE_DIR = Path(__file__).resolve().parent
-MAX_SEQ_LEN = 150
+DEFAULT_MAX_SEQ_LEN = 64
 
 # Page setup
 st.set_page_config(page_title="Toxicity Detector", layout="wide")
@@ -45,6 +45,7 @@ def load_transformer_tokenizer():
 
 # Load resources
 preprocessor, model, model_type = load_app_resources()
+MAX_SEQ_LEN = getattr(model, "max_seq_len", DEFAULT_MAX_SEQ_LEN)
 vocab = load_vocab()
 transformer_tokenizer = load_transformer_tokenizer()
 
@@ -152,3 +153,4 @@ st.sidebar.title("System Info")
 st.sidebar.write("Pure Streamlit Standalone Application")
 st.sidebar.write(f"Model Engine Active: **{model_type.upper()}**")
 st.sidebar.write("6-class multi-label toxicity detection")
+
