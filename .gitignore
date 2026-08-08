@@ -3,3 +3,5 @@ __pycache__/**
 /.vs/AI Project/FileContentIndex
 /.vs/AI Project/v17
 /.vs
+/models/transformer_model.pt
+/models/gru_model.pt
